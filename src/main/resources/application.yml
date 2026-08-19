@@ -1,0 +1,6 @@
+spring:
+  profiles:
+    active: dev
+
+server:
+  forward-headers-strategy: native

@@ -1,0 +1,44 @@
+spring:
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  application:
+    name: "GramStore"
+  data:
+    mongodb:
+      uri: "mongodb+srv://dhiren:Dhiren_2006@vela.tkxsdpk.mongodb.net/velacms?retryWrites=true&w=majority"
+      auto-index-creation: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+app:
+  storage:
+    root: ./data
+  security:
+    accessToken:
+      secret: "E/HY0RAZ7Kd2Ry7teq0Jx0xJMrwWVgUJYCi9SvjiqDI="
+      ttlMins: 15
+      issuer: "gramstore"
+    stimulus:
+      cookieName: "stimulus"
+      secret: "xGAPnmpTw5776n9JTBzOI+HrCpWNWpo3SS0QfpuzfA0="
+      appender: "vE.@La"
+      algorithm: "HmacSHA256"
+      ttlDays: 14
+  redis:
+    hostName: "redis-13904.crce286.ap-south-1-1.ec2.cloud.redislabs.com"
+    port: 13904
+    password: "AkHsw7t1FVRsvMQRh48yII1UJ98ZHSFh"
+    accessTokenKeyPrefix: "accTo:"
+    sessionHashKeyPrefix: "ses:"
+    sessionHashUserIdField: "uid"
+    sessionHashSignaturePrefixField: "signPfx"

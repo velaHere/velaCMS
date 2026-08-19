@@ -1,0 +1,8 @@
+{
+    "diagnostics.globals": [
+        "ARGV"
+    ],
+    "diagnostics.disable": [
+        "undefined-global"
+    ]
+}
