@@ -38,12 +38,22 @@ public class AccessTokenUtil {
         this.redisTemplate=redisTemplate;
     }
 
+    @Nullable
     public String verifyAndExtractUsername(String token){
-        return extractAllClaims(token).getSubject();
+        try {
+            return extractAllClaims(token).getSubject();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
+    @Nullable
     public Date extractExpiration(String token){
-        return extractAllClaims(token).getExpiration();
+        try {
+            return extractAllClaims(token).getExpiration();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private Claims extractAllClaims(String token){
@@ -57,8 +67,11 @@ public class AccessTokenUtil {
     public boolean isTokenExpiredOrInvalid(@Nullable String token){
         if(token == null) return true;
         String username = verifyAndExtractUsername(token);
+        if(username == null) return true;
         String stored = (String) redisTemplate.opsForValue().get(ACCESS_TOKEN_PREFIX + username);
-        return extractExpiration(token).before(new Date()) || stored==null || !stored.equals(token);
+        Date date = extractExpiration(token);
+        if(date == null) return true;
+        return date.before(new Date()) || stored==null || !stored.equals(token);
     }
 
     public void deleteJWT(String username) {

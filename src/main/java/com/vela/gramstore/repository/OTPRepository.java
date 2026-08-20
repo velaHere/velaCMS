@@ -1,5 +1,6 @@
 package com.vela.gramstore.repository;
 
+import com.vela.gramstore.config.property.AppProperties;
 import com.vela.gramstore.security.OTPKeys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -13,9 +14,9 @@ import java.util.List;
 @Component
 public class OTPRepository {
 
-    private static final String PREFIX = "otp:";
-    private static final String HASH_FIELD = "hash";
-    private static final String ATTEMPTS_FIELD = "attempts";
+    private final String keyPrefix;
+    private final String hashedOtpField;
+    private final String attemptsField;
 
     private static final RedisScript<Long> RESERVE_ATTEMPT_SCRIPT =
             RedisScript.of(
@@ -36,23 +37,26 @@ public class OTPRepository {
     private final RedisTemplate<String, Object> template;
 
     @Autowired
-    public OTPRepository(RedisTemplate<String, Object> template) {
+    public OTPRepository(RedisTemplate<String, Object> template, AppProperties properties) {
         this.template = template;
+        this.keyPrefix = properties.security().otp().cacheKeyPrefix();
+        this.hashedOtpField = properties.security().otp().hashedOtpField();
+        this.attemptsField = properties.security().otp().attemptsField();
     }
 
     public void saveHashedOTP(String userID, String hashedOTP) {
-        String key = PREFIX + userID;
-        template.opsForHash().put(key, HASH_FIELD, hashedOTP);
-        template.opsForHash().put(key, ATTEMPTS_FIELD, 0);
+        String key = keyPrefix + userID;
+        template.opsForHash().put(key, hashedOtpField, hashedOTP);
+        template.opsForHash().put(key, attemptsField, 0);
         template.expire(key, Duration.ofMinutes(5));
     }
 
     public String getHashedOTP(String userID) {
-        return (String) template.opsForHash().get(PREFIX + userID, HASH_FIELD);
+        return (String) template.opsForHash().get(keyPrefix + userID, hashedOtpField);
     }
 
     public long reserveAttempt(String userID) {
-        return template.execute(RESERVE_ATTEMPT_SCRIPT, List.of(PREFIX+userID));
+        return template.execute(RESERVE_ATTEMPT_SCRIPT, List.of(keyPrefix +userID));
     }
 
     public long reserveResend(String userID, String ip) {

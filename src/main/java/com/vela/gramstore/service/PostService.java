@@ -1,21 +1,29 @@
 package com.vela.gramstore.service;
 
 
+import com.vela.gramstore.core.result.FailureType;
+import com.vela.gramstore.core.result.Result;
 import com.vela.gramstore.dto.request.CreatePostRequest;
 import com.vela.gramstore.dto.request.PostFrontMatterRequest;
 import com.vela.gramstore.dto.request.UpdatePostContentRequest;
+import com.vela.gramstore.dto.response.PageResponse;
+import com.vela.gramstore.dto.response.PostCardResponse;
 import com.vela.gramstore.dto.response.PostResponse;
 import com.vela.gramstore.entity.Post;
 import com.vela.gramstore.entity.User;
 import com.vela.gramstore.repository.PostRepository;
 import com.vela.gramstore.repository.UserRepository;
+import com.vela.gramstore.security.AuthenticatedUser;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,12 +42,19 @@ public class PostService {
     private final Path postsPath;
     private final PostRepository repository;
     private final UserRepository userRepository;
+    private final UserDetailsService userDetailsService;
 
     @Autowired
-    public PostService(@Value("${app.storage.root}") String root, PostRepository repository, UserRepository userRepository) {
+    public PostService(
+            @Value("${app.storage.root}") String root,
+            PostRepository repository,
+            UserRepository userRepository,
+            UserDetailsService userDetailsService
+    ) {
         this.postsPath = Paths.get(root, "posts");
         this.repository = repository;
         this.userRepository = userRepository;
+        this.userDetailsService = userDetailsService;
     }
 
     public PostResponse getPost(@NotNull String username, @NotNull String slug) {
@@ -55,7 +70,7 @@ public class PostService {
         if(!Files.exists(file)) return null;
 
         try {
-            String matter = buildFrontMatter(post);
+            String matter = getFrontMatter(post);
             String content = Files.readString(file);
             return new PostResponse(matter + content);
         } catch (Exception e) {
@@ -83,10 +98,34 @@ public class PostService {
         }
     }
 
-    public List<Post> getAllPosts(@NotNull String username) {
-        User user = userRepository.findByUsername(username);
-        if(user==null) return List.of();
-        return repository.getAllPosts(user.getId());
+    public Result<PageResponse<PostCardResponse>> getAllPosts(@NotNull String username, @Nullable String category, int page, int limit) {
+        if(page < 0 || limit <= 0) return Result.failure(FailureType.INVALID_ARGUMENTS);
+        AuthenticatedUser user = (AuthenticatedUser) userDetailsService.loadUserByUsername(username);
+        if(user==null) return Result.failure(FailureType.CONTENT_NOT_FOUND);
+
+        if (limit > 9) limit = 9;
+        boolean hasNext;
+        List<Post> posts;
+
+        if(category == null) {
+            posts = repository.getAllPosts(user.getId(), page, limit);
+            hasNext = repository.hasNext(user.getId(), page, limit);
+        }
+        else {
+            posts = repository.getAllPosts(user.getId(), category, page, limit);
+            hasNext = repository.hasNext(user.getId(), category, page, limit);
+        }
+
+        return Result.success(
+               new PageResponse<>(
+                       posts.stream()
+                               .map(PostCardResponse::buildFromPost)
+                               .toList(),
+                       page,
+                       limit,
+                       hasNext
+               )
+        );
     }
 
     @Transactional
@@ -116,15 +155,19 @@ public class PostService {
         if(!request.slug().matches("[a-z0-9-]+"))
             throw new RuntimeException("Invalid slug");
 
+        switch (request.category().toLowerCase()) {
+            case "releases", "updates", "blogs" -> {}
+            default -> throw new RequestRejectedException("Invalid Post Category");
+        }
+
         ObjectId postID = new ObjectId();
 
-        LocalDate today = LocalDate.now();
         String fileName = postID + ".md";
 
         User user = userRepository.findByUsername(username);
 
         if(user==null)
-            throw new RuntimeException("User not found: " + username);
+            throw new RequestRejectedException("User not found: " + username);
 
         String userID = user.getId().toString();
 
@@ -147,9 +190,9 @@ public class PostService {
                         .ownerID(new ObjectId(userID))
                         .title(request.title())
                         .description(request.description())
-                        .createdAt(today)
+                        .createdAt(Instant.now())
                         .slug(request.slug())
-                        .category(request.category())
+                        .category(request.category().toLowerCase())
                         .postType(request.postType())
                         .published(request.published())
                         .icon(request.icon())
@@ -208,9 +251,14 @@ public class PostService {
         if(!request.slug().matches("[a-z0-9-]+"))
             throw new RuntimeException("Invalid slug");
 
+        switch (request.category().toLowerCase()) {
+            case "releases", "updates", "blogs" -> {}
+            default -> throw new RequestRejectedException("Invalid Post Category");
+        }
+
         User user = userRepository.findByUsername(username);
         if(user==null)
-            throw new RuntimeException("User not found: " + username);
+            throw new RequestRejectedException("User not found: " + username);
 
         boolean result;
         try {
@@ -231,7 +279,7 @@ public class PostService {
                 .formatted(content);
     }
 
-    private String buildFrontMatter(@NotNull Post post) {
+    public String getFrontMatter(@NotNull Post post) {
         return """
                 ---
                  layout: post

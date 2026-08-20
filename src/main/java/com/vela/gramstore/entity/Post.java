@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDate;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -37,5 +37,5 @@ public class Post {
     private String actionLabel;
     private String actionLink;
     private boolean published;
-    private LocalDate createdAt;
+    private Instant createdAt;
 }

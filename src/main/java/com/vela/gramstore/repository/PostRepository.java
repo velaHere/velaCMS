@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -19,6 +20,8 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class PostRepository {
+
+    private static final int SIZE = 9;
 
     private final MongoTemplate mongoTemplate;
 
@@ -50,7 +53,7 @@ public class PostRepository {
                 .set("title", request.title())
                 .set("description", request.description())
                 .set("slug", request.slug())
-                .set("category", request.category())
+                .set("category", request.category().toLowerCase())
                 .set("postType", request.postType())
                 .set("icon", request.icon())
                 .set("actionLabel", request.actionLabel())
@@ -62,10 +65,36 @@ public class PostRepository {
         return result.getMatchedCount() > 0;
     }
 
-    public List<Post> getAllPosts(@NotNull ObjectId userID) {
+    public List<Post> getAllPosts(@NotNull String userID, int page, int limit) {
         Query query = new Query();
-        query.addCriteria(Criteria.where("ownerID").is(userID));
+        query.addCriteria(Criteria.where("ownerID").is(new ObjectId(userID)));
+        query.skip((long) page*SIZE);
+        query.limit(limit);
+        query.with(Sort.by(Sort.Direction.DESC, "createdAt"));
         return mongoTemplate.find(query, Post.class);
+    }
+
+    public List<Post> getAllPosts(@NotNull String userID, @NotNull String category, int page, int limit) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("ownerID").is(new ObjectId(userID)).and("category").is(category));
+        query.skip((long) page*SIZE);
+        query.limit(limit);
+        query.with(Sort.by(Sort.Direction.DESC, "createdAt"));
+        return mongoTemplate.find(query, Post.class);
+    }
+
+    public boolean hasNext(@NotNull String userID, @NotNull String category, int page, int limit) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("ownerID").is(new ObjectId(userID)).and("category").is(category));
+        long count = mongoTemplate.count(query, Post.class);
+        return (long) (page + 1) *limit < count;
+    }
+
+    public boolean hasNext(@NotNull String userID, int page, int limit) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where("ownerID").is(new ObjectId(userID)));
+        long count = mongoTemplate.count(query, Post.class);
+        return (long) (page + 1) *limit < count;
     }
 
     public void insert(Post post) {

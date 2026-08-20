@@ -28,7 +28,11 @@ public class PostVerificationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
-        return !path.matches("^/[^/]+/post$") && !path.matches("^/[^/]+/post/[^/]+$");
+        if(path.matches("/cms/post/create")) return true;
+        return !path.matches("^/[^/]+/post$")
+                && !path.matches("^/[^/]+/post/[^/]+$") &&
+                !path.matches("^/[^/]+/posts/\\d+/\\d+$") &&
+                !path.matches("^/[^/]+/posts/[^/]+/\\d+/\\d+$");
     }
 
     @Override
@@ -46,7 +50,7 @@ public class PostVerificationFilter extends OncePerRequestFilter {
             String username = split[1];
 
             AuthenticatedUser user = (AuthenticatedUser) userDetailsService.loadUserByUsername(username);
-            if (user.getToken().equals(token))
+            if (user.getToken()!= null && user.getToken().equals(token))
                 SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
 
         } catch (Exception e) {

@@ -71,13 +71,13 @@ public class AuthService {
 
     @Transactional
     public Result<AuthResponse> register(@NotNull RegisterRequest request, HttpServletResponse response){
-        if(userRepository.findByEmail(request.email())!=null)
+        if(userRepository.findByEmail(request.email().toLowerCase())!=null)
             return Result.failure("User already exists", FailureType.USER_ALREADY_EXISTS);
 
         User user = User.builder()
                 .id(new ObjectId())
                 .username(request.username())
-                .email(request.email())
+                .email(request.email().toLowerCase())
                 .password(encoder.encode(request.password()))
                 .roles(List.of("USER"))
                 .isVerified(false)
@@ -102,7 +102,7 @@ public class AuthService {
     }
 
     public Result<AuthResponse> login(LoginRequest request, HttpServletResponse response) {
-        User dbUser = userRepository.findByEmail(request.email());
+        User dbUser = userRepository.findByEmail(request.email().toLowerCase());
         if (dbUser == null)
             return Result.failure(FailureType.USER_NOT_FOUND);
 

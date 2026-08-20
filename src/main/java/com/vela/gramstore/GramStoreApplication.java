@@ -1,6 +1,9 @@
 package com.vela.gramstore;
 
 import com.vela.gramstore.config.property.AppProperties;
+
+import java.beans.BeanProperty;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

@@ -22,19 +22,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SpringSecurity {
 
     private final UserDetailsServiceImpl userDetailsService;
-    private final JWTAuthenticationEntryPoint authenticationEntryPoint;
     private final EmailVerificationFilter emailVerificationFilter;
     private final PostVerificationFilter postVerificationFilter;
 
     @Autowired
     public SpringSecurity(
             UserDetailsServiceImpl userDetailsService,
-            JWTAuthenticationEntryPoint authenticationEntryPoint,
             EmailVerificationFilter emailVerificationFilter,
             PostVerificationFilter postVerificationFilter
     ){
         this.userDetailsService=userDetailsService;
-        this.authenticationEntryPoint = authenticationEntryPoint;
         this.emailVerificationFilter = emailVerificationFilter;
         this.postVerificationFilter = postVerificationFilter;
     }
@@ -51,10 +48,9 @@ public class SpringSecurity {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(postVerificationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(authFilter, PostVerificationFilter.class)
-                .addFilterAfter(emailVerificationFilter, AuthFilter.class)
-                .exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint))
+                .addFilterBefore(authFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(postVerificationFilter, AuthFilter.class)
+                .addFilterAfter(emailVerificationFilter, PostVerificationFilter.class)
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session->session

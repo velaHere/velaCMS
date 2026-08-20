@@ -1,5 +1,6 @@
 package com.vela.gramstore.config;
 
+import com.vela.gramstore.config.property.AppProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -12,15 +13,10 @@ import java.util.List;
 public class CorsConfig {
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(AppProperties properties) {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of(
-                "http://127.0.0.1:3000",
-                "http://localhost:3000",
-                "http://127.0.0.1:4000",
-                "http://localhost:4000"
-        ));
+        configuration.setAllowedOrigins(properties.security().cors().allowedOrigins());
 
         configuration.setAllowedMethods(List.of(
                 "GET","POST","PUT","PATCH","DELETE","OPTIONS"
