@@ -9,9 +9,9 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.vela</groupId>
-	<artifactId>GramStore</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<name>GramStore</name>
+	<artifactId>velaCMS</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<name>velaCMS</name>
 	<description>Ecommerce App for rural craft workers</description>
 	<url/>
 	<licenses>
