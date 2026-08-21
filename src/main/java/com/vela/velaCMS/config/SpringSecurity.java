@@ -44,7 +44,8 @@ public class SpringSecurity {
                                 "/cms/auth/register",
                                 "/cms/auth/refresh",
                                 "/image/**",
-                                "/ws/**"
+                                "/ws/**",
+                                "/healthy-vela"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
