@@ -25,10 +25,29 @@ public class CorsConfig {
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
-        UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 
-        source.registerCorsConfiguration("/**", configuration);
+        // Public endpoints: allow all origins, no restrictions
+        CorsConfiguration openConfig = new CorsConfiguration();
+        openConfig.setAllowedOriginPatterns(List.of("*")); // works with credentials
+        openConfig.setAllowedMethods(List.of("GET","OPTIONS"));
+        openConfig.setAllowedHeaders(List.of("*"));
+        openConfig.setAllowCredentials(true);
+
+        // Register only the endpoints you want open
+        source.registerCorsConfiguration("/healthy-vela", openConfig);
+        source.registerCorsConfiguration("/image/**", openConfig);
+        source.registerCorsConfiguration("/*/posts/**", openConfig);
+        source.registerCorsConfiguration("/*/post/**", openConfig);
+
+        // Everything else uses your stricter config
+        CorsConfiguration restrictedConfig = new CorsConfiguration();
+        restrictedConfig.setAllowedOrigins(properties.security().cors().allowedOrigins());
+        restrictedConfig.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        restrictedConfig.setAllowedHeaders(List.of("*"));
+        restrictedConfig.setAllowCredentials(true);
+
+        source.registerCorsConfiguration("/**", restrictedConfig);
 
         return source;
     }
