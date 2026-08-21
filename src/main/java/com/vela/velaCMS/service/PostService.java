@@ -19,7 +19,6 @@ import org.bson.types.ObjectId;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -27,10 +26,6 @@ import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,22 +34,22 @@ import java.util.Optional;
 @Service
 public class PostService {
 
-    private final Path postsPath;
     private final PostRepository repository;
     private final UserRepository userRepository;
     private final UserDetailsService userDetailsService;
+    private final SupabaseStorageService supabaseStorageService;
 
     @Autowired
     public PostService(
-            @Value("${app.storage.root}") String root,
             PostRepository repository,
             UserRepository userRepository,
-            UserDetailsService userDetailsService
+            UserDetailsService userDetailsService,
+            SupabaseStorageService supabaseStorageService
     ) {
-        this.postsPath = Paths.get(root, "posts");
         this.repository = repository;
         this.userRepository = userRepository;
         this.userDetailsService = userDetailsService;
+        this.supabaseStorageService = supabaseStorageService;
     }
 
     public PostResponse getPost(@NotNull String username, @NotNull String slug) {
@@ -64,17 +59,18 @@ public class PostService {
         if(opPost.isEmpty()) return null;
         Post post = opPost.get();
 
-        String fileName = post.getId() + ".md";
-        Path file = postsPath.resolve(user.getId().toString()).resolve(fileName);
-
-        if(!Files.exists(file)) return null;
+        String storageKey = getStorageKey(
+                user.getId(),
+                post.getId()
+        );
 
         try {
             String matter = getFrontMatter(post);
-            String content = Files.readString(file);
+            String content =
+                    supabaseStorageService.get(storageKey);
             return new PostResponse(matter + content);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read the contents of the file: " + fileName, e);
+            throw new RuntimeException("Failed to read the contents of the file: " + storageKey, e);
         }
     }
 
@@ -86,15 +82,17 @@ public class PostService {
         if(opPost.isEmpty()) return null;
         Post post = opPost.get();
 
-        String fileName = post.getId() + ".md";
-        Path file = postsPath.resolve(user.getId().toString()).resolve(fileName);
-
-        if(!Files.exists(file)) return null;
+        String storageKey = getStorageKey(
+                user.getId(),
+                post.getId()
+        );
 
         try {
-            return new PostResponse(Files.readString(file));
+            String content =
+                    supabaseStorageService.get(storageKey);
+            return new PostResponse(content);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read the contents of the file: " + fileName, e);
+            throw new RuntimeException("Failed to read the contents of the file: " + storageKey, e);
         }
     }
 
@@ -135,17 +133,39 @@ public class PostService {
         if(user==null)
             throw new RuntimeException("User not found: " + username);
 
-        Optional<Post> post = repository.findBySlugAndRemove(user.getId(), slug);
+        Optional<Post> post = repository.findBySlug(user.getId(), slug);
         if(post.isEmpty())
             throw new RuntimeException("Post not found with slug: " + slug);
 
-        String fileName = post.get().getId() + ".md";
-        Path file = postsPath.resolve(user.getId().toString()).resolve(fileName);
+        String storageKey = getStorageKey(
+                user.getId(),
+                post.get().getId()
+        );
 
         try {
-            Files.deleteIfExists(file);
+            supabaseStorageService.delete(storageKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete the post: " + slug, e);
+        }
+
+        Optional<Post> deletedPost =
+                repository.findBySlugAndRemove(
+                        user.getId(),
+                        slug
+                );
+
+        if (deletedPost.isEmpty()) {
+
+            log.error(
+                    "Post file was deleted from storage, " +
+                            "but MongoDB deletion failed. " +
+                            "Post ID: {}",
+                    post.get().getId()
+            );
+
+            throw new RuntimeException(
+                    "Failed to delete post metadata: " + slug
+            );
         }
     }
 
@@ -171,18 +191,8 @@ public class PostService {
 
         String userID = user.getId().toString();
 
-        Path file = postsPath
-                .resolve(userID)
-                .resolve(fileName);
-
-        try {
-            Files.createDirectories(file.getParent());
-        } catch (Exception e) {
-            throw new RuntimeException("failed to create the Directory", e);
-        }
-
-        if(Files.exists(file))
-            throw new RuntimeException("Post: " + fileName + " already exists");
+        String storageKey =
+                "posts/" + userID + "/" + fileName;
 
         repository.insert(
                 Post.builder()
@@ -203,13 +213,12 @@ public class PostService {
 
         try {
             String markdown = buildMarkdown(request.content());
-            Files.writeString(file, markdown, StandardOpenOption.CREATE_NEW);
+            supabaseStorageService.put(
+                    storageKey,
+                    markdown,
+                    "text/markdown; charset=utf-8"
+            );
         } catch (Exception e) {
-            try {
-                Files.deleteIfExists(file);
-            } catch (Exception deleteError) {
-                log.error("Failed rollback", deleteError);
-            }
             throw new RuntimeException("Failed to create the post: " + fileName, e);
         }
 
@@ -225,18 +234,18 @@ public class PostService {
         if(result.isEmpty())
             return ResponseEntity.notFound().build();
 
-        Path file = postsPath
-                .resolve(user.getId().toString())
-                .resolve(result.get().getId() + ".md");
+        Post post = result.get();
 
-        if(!Files.exists(file))
-            return ResponseEntity.notFound().build();
+        String storageKey = getStorageKey(
+                user.getId(),
+                post.getId()
+        );
 
         try {
-            Files.writeString(
-                    file,
+            supabaseStorageService.put(
+                    storageKey,
                     buildMarkdown(request.content()),
-                    StandardOpenOption.TRUNCATE_EXISTING
+                    "text/markdown; charset=utf-8"
             );
         } catch (Exception e) {
             throw new RuntimeException("Failed to update the post content.", e);
@@ -303,6 +312,18 @@ public class PostService {
                         escape(post.getActionLabel()),
                         escape(post.getActionLink())
                 );
+    }
+
+    private String getStorageKey(
+            @NotNull ObjectId userID,
+            @NotNull ObjectId postID
+    ) {
+
+        return "posts/"
+                + userID
+                + "/"
+                + postID
+                + ".md";
     }
 
     private String escape(String value) {

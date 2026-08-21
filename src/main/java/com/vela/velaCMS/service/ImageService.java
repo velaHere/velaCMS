@@ -4,8 +4,8 @@ import com.vela.velaCMS.dto.response.ImageUploadResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.bson.types.ObjectId;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,10 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,32 +34,42 @@ public class ImageService {
             "image/webp", new byte[]{0x52, 0x49, 0x46, 0x46} // "RIFF"
     );
 
-    private final Path imageFolder;
+    private final SupabaseStorageService supabaseStorageService;
+    private final Tika tika;
 
-    public ImageService(@Value("${app.storage.root}") String storageRoot) {
-        this.imageFolder = Paths.get(storageRoot, "images");
+    @Autowired
+    public ImageService(
+            SupabaseStorageService supabaseStorageService
+    ) {
+        this.supabaseStorageService = supabaseStorageService;
+        this.tika = new Tika();
     }
 
     public ResponseEntity<Resource> getImage(String imageName) {
         try {
-            String bucket = imageName.substring(0,2);
-            Path imagePath = imageFolder
-                    .resolve(bucket)
-                    .resolve(imageName);
 
-            if(!Files.exists(imagePath)) return ResponseEntity.notFound().build();
+            if (!isValidImageName(imageName)) {
+                return ResponseEntity.badRequest().build();
+            }
 
-            Resource resource = new FileSystemResource(imagePath);
+            String storageKey = getStorageKey(imageName);
+
+            byte[] imageData = supabaseStorageService.getBytes(storageKey);
 
             String contentType =
-                    Files.probeContentType(imagePath);
+                    getContentTypeFromImageName(imageName);
 
             return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(resource);
+                    .contentType(
+                            MediaType.parseMediaType(contentType)
+                    )
+                    .contentLength(imageData.length)
+                    .body(
+                            new ByteArrayResource(imageData)
+                    );
         } catch (Exception e) {
-            log.error("Failed to load image {}", imageName, e);
-            return ResponseEntity.internalServerError().build();
+            log.error("Failed to load image: {}", imageName, e);
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -77,38 +83,73 @@ public class ImageService {
                 return ResponseEntity.badRequest().build();
             }
 
-            Tika tika = new Tika();
-            String mimeType = tika.detect(file.getInputStream());
-            if(!ALLOWED_TYPES.contains(mimeType))
+            String mimeType;
+
+            try (InputStream inputStream = file.getInputStream()) {
+                mimeType = tika.detect(inputStream);
+            }
+
+            if (!ALLOWED_TYPES.contains(mimeType))
                 return ResponseEntity.badRequest().build();
 
-            byte[] header = new byte[8];
-            try (InputStream is = file.getInputStream()) {
-                is.read(header);
+            byte[] header = new byte[12];
+            int bytesRead;
+
+            try (InputStream inputStream = file.getInputStream()) {
+                bytesRead = inputStream.read(header);
             }
-            byte[] expected = MAGIC_NUMBERS.get(mimeType);
+
+            if (bytesRead <= 0)
+                return ResponseEntity.badRequest().build();
+
+            byte[] expected =
+                    MAGIC_NUMBERS.get(mimeType);
+
             if (expected != null && !startsWith(header, expected)) {
-                throw new IllegalArgumentException("Invalid file signature for " + mimeType);
+                return ResponseEntity.badRequest().build();
             }
 
-            String imageName = new ObjectId() + "." + getExtension(file.getOriginalFilename());
+            String extension = getExtensionFromMimeType(mimeType);
 
-            String shard = imageName.substring(0, 2);
-            Path folder = imageFolder.resolve(shard);
+            String imageName = new ObjectId() + "." + extension;
 
-            Files.createDirectories(folder);
-            Path target = folder.resolve(imageName);
+            String storageKey = getStorageKey(imageName);
 
-            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+            try (InputStream inputStream = file.getInputStream()) {
+                supabaseStorageService.put(storageKey, inputStream, file.getSize(), mimeType);
+            }
 
-            return ResponseEntity.ok(
-                    new ImageUploadResponse(imageName)
-            );
-
+            return ResponseEntity.ok(new ImageUploadResponse(imageName));
         } catch (Exception e) {
             log.error("Failed to upload Image");
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    private String getStorageKey(String imageName) {
+
+        String shard = imageName.substring(0, 2);
+
+        return "images/"
+                + shard
+                + "/"
+                + imageName;
+    }
+
+    private String getContentTypeFromImageName(
+            String imageName
+    ) {
+
+        String extension =
+                getExtension(imageName);
+
+        return switch (extension) {
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "webp" -> "image/webp";
+            default ->
+                    MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        };
     }
 
     private String getExtension(String filename) {
@@ -125,6 +166,26 @@ public class ImageService {
 
         return filename.substring(dot + 1)
                 .toLowerCase();
+    }
+
+    private String getExtensionFromMimeType(
+            String mimeType
+    ) {
+
+        return switch (mimeType) {
+            case "image/png" -> "png";
+            case "image/jpeg" -> "jpg";
+            case "image/webp" -> "webp";
+            default -> throw new IllegalArgumentException(
+                    "Unsupported image type: " + mimeType
+            );
+        };
+    }
+
+    private boolean isValidImageName(String imageName) {
+        return imageName.matches(
+                "^[a-fA-F0-9]{24}\\.(png|jpg|webp)$"
+        );
     }
 
     private boolean startsWith(byte[] data, byte[] prefix) {

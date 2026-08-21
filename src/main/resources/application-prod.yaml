@@ -25,6 +25,12 @@ spring:
 app:
   storage:
     root: ./data
+    supabase:
+      endpoint: ${SUPABASE_S3_ENDPOINT}
+      access-key: ${SUPABASE_S3_ACCESS_KEY}
+      secret-key: ${SUPABASE_S3_SECRET_KEY}
+      region: ${SUPABASE_S3_REGION}
+      bucket: ${SUPABASE_S3_BUCKET}
   security:
     otp:
       cache-key-prefix: ${OTP_CACHE_KEY_PREFIIX}
